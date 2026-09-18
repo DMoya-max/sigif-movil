@@ -21,7 +21,7 @@ class PasswordService {
     final rng = Random.secure();
     final salt = List<int>.generate(16, (_) => rng.nextInt(256));
     final hash = await _derivar(clave, salt);
-    return 'pbkdf2_sha256\$_iteraciones\$${_hex(salt)}\$${_hex(hash)}';
+    return 'pbkdf2_sha256\$$_iteraciones\$${_hex(salt)}\$${_hex(hash)}';
   }
 
   static Future<bool> verificar(String clave, String hashAlmacenado) async {

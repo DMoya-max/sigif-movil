@@ -22,7 +22,6 @@ class ProductosRepository {
     if (soloActivos) {
       where.add('activo = 1');
     }
-    final filtro = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
     final filas = await _db.query(
       'productos',
       where: where.isEmpty ? null : where.join(' AND '),

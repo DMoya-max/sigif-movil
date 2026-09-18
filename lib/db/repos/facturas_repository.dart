@@ -85,6 +85,7 @@ class FacturasRepository {
     String? correoCliente,
     String codigoDescuento = '',
     String metodoPago = 'EFECTIVO',
+    DateTime? fechaVencimiento,
   }) async {
     if (productos.isEmpty) {
       return const ResultadoVenta.error('El carrito está vacío');
@@ -155,13 +156,14 @@ class FacturasRepository {
       }
 
       // Cliente
-      ClienteModel cliente;
+      Cliente cliente;
       try {
-        cliente = await clienteRepo.obtenerOCrear(
+        final (obtenido, _) = await clienteRepo.obtenerOCrear(
           clienteId: clienteId,
           nombre: nombreLimpio.isEmpty ? null : nombreLimpio,
           correo: correo.isEmpty ? null : correo,
         );
+        cliente = obtenido;
       } catch (e) {
         return ResultadoVenta.error(e.toString());
       }
@@ -171,14 +173,14 @@ class FacturasRepository {
 
       final facturaId = await _db.transaction((txn) async {
         final id = await txn.insert('facturas', {
-          'cliente_id': cliente.$1.id,
+          'cliente_id': cliente.id,
           'usuario': nombreUsuario.isNotEmpty ? nombreUsuario : 'Usuario',
           'fecha': DateTime.now().toIso8601String(),
           'total': totalFinal,
           'descuento': valorDescuento,
           'metodo_pago': metodo,
           'valor_pagado': metodo == 'CREDITO' ? 0 : totalFinal,
-          'fecha_vencimiento': null,
+          'fecha_vencimiento': fechaVencimiento?.toIso8601String().split('T').first,
         });
 
         for (final d in detalle) {
@@ -200,7 +202,7 @@ class FacturasRepository {
       });
 
       final accion =
-          'CREÓ FACTURA #$facturaId - CLIENTE: ${cliente.$1.nombre} - TOTAL: ${Formato.cop(totalFinal)}';
+          'CREÓ FACTURA #$facturaId - CLIENTE: ${cliente.nombre} - TOTAL: ${Formato.cop(totalFinal)}';
       await audRepo.registrar(
         usuario: nombreUsuario.isNotEmpty ? nombreUsuario : 'Usuario',
         accion: accion,
@@ -244,5 +246,3 @@ class FacturasRepository {
   Future<int> contar() async =>
       Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM facturas')) ?? 0;
 }
-
-typedef ClienteModel = Cliente;

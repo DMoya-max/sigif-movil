@@ -1,23 +1,30 @@
 import 'package:flutter/material.dart';
-import 'screens/login_screen.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'db/database.dart';
+import 'screens/home/app_shell.dart';
+import 'screens/login_screen.dart';
+import 'services/auth_service.dart';
+import 'theme/app_theme.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  inicializarSqflite();
+  await SessionService.instance.cargarSesion();
+  runApp(const SigifApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class SigifApp extends StatelessWidget {
+  const SigifApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'SIGIF',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey),
-      ),
-      home: const LoginScreen(),
+      theme: AppTheme.tema(),
+      home: SessionService.instance.estaLogueado
+          ? AppShell(usuario: SessionService.instance.usuario!)
+          : const LoginScreen(),
     );
   }
 }

@@ -65,7 +65,7 @@ class Usuario {
         'telefono': telefono,
         'correo': correo,
         'activo': activo ? 1 : 0,
-        'fecha_inicio': fechaInicio == null ? null : fechaInicio!.toIso8601String().split('T').first,
+        'fecha_inicio': fechaInicio?.toIso8601String().split('T').first,
         'cargo': cargo,
         'es_superadmin_principal': esSuperadminPrincipal ? 1 : 0,
       };

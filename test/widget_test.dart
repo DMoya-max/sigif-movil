@@ -1,30 +1,53 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:sigif_flutter/main.dart';
+import 'package:sigif_flutter/core/descuentos.dart';
+import 'package:sigif_flutter/core/formato.dart';
+import 'package:sigif_flutter/services/password_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('PasswordService', () {
+    test('crearHash y verificar generan un hash válido', () async {
+      final hash = await PasswordService.crearHash('admin1234');
+      final partes = hash.split(r'$');
+      expect(partes.length, 4);
+      expect(partes[0], 'pbkdf2_sha256');
+      expect(int.parse(partes[1]), 100000);
+      expect(await PasswordService.verificar('admin1234', hash), isTrue);
+      expect(await PasswordService.verificar('otraClave', hash), isFalse);
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('verificar rechaza hashes malformados', () async {
+      expect(await PasswordService.verificar('x', 'no-es-un-hash'), isFalse);
+      expect(await PasswordService.verificar('x', ''), isFalse);
+    });
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  group('Descuentos', () {
+    test('porcentajeCodigo reconoce códigos en mayúsculas y minúsculas',
+        () {
+      expect(Descuentos.porcentajeCodigo('DESC10'), 10);
+      expect(Descuentos.porcentajeCodigo('descuento10'), 10);
+      expect(Descuentos.porcentajeCodigo('  promo20 '), 20);
+      expect(Descuentos.porcentajeCodigo('SUPER30'), 30);
+      expect(Descuentos.porcentajeCodigo('OFERTA50'), 50);
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('porcentajeCodigo devuelve 0 para códigos inválidos', () {
+      expect(Descuentos.porcentajeCodigo('NOEXISTE'), 0);
+      expect(Descuentos.porcentajeCodigo(null), 0);
+      expect(Descuentos.porcentajeCodigo(''), 0);
+    });
+  });
+
+  group('Formato', () {
+    test('cop formatea con separador de miles y sufijo COP', () {
+      expect(Formato.cop(1234), '\$ 1.234 COP');
+      expect(Formato.cop(0), '\$ 0 COP');
+      expect(Formato.cop(1234567.89), '\$ 1.234.568 COP');
+    });
+
+    test('miles formatea con separador de miles', () {
+      expect(Formato.miles(1500), '1.500');
+      expect(Formato.miles(42), '42');
+    });
   });
 }

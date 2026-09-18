@@ -1,17 +1,20 @@
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../core/constantes.dart';
 import '../services/password_service.dart';
 
+bool _sqfliteInicializado = false;
+
 /// Inicializa el factory de SQLite multiplataforma (Android/iOS reales y
 /// desktop Linux/Windows/macOS para pruebas durante el desarrollo).
 void inicializarSqflite() {
-  if (databaseFactory == null) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
+  if (_sqfliteInicializado) return;
+  _sqfliteInicializado = true;
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
 }
 
 /// Base de datos local de SIGIF: replica el esquema de los modelos Django.
@@ -31,8 +34,9 @@ class AppDatabase {
 
   Future<Database> _abrir() async {
     inicializarSqflite();
-    final dir = await getDatabasesPath();
-    final ruta = p.join(dir, _nombreBd);
+    final ruta = _enPruebas
+        ? inMemoryDatabasePath
+        : p.join(await getDatabasesPath(), _nombreBd);
     return openDatabase(
       ruta,
       version: _version,
@@ -42,6 +46,10 @@ class AppDatabase {
       onCreate: _crearEsquemaYSembrar,
     );
   }
+
+  /// En `flutter test` cada archivo corre en su propio isolate; usar una base
+  /// en memoria evita bloqueos al compartir el mismo archivo `.db`.
+  bool get _enPruebas => Platform.environment['FLUTTER_TEST'] == 'true';
 
   Future<void> _crearEsquemaYSembrar(Database db, int version) async {
     await db.execute('''

@@ -18,7 +18,12 @@ class UsuariosRepository {
       where = 'WHERE nombre LIKE ? OR cargo LIKE ? OR telefono LIKE ? OR correo LIKE ?';
       args.addAll(['%$termino%', '%$termino%', '%$termino%', '%$termino%']);
     }
-    final filas = await _db.query('usuarios', where: where, whereArgs: args, orderBy: 'nombre');
+    final filas = await _db.query(
+      'usuarios',
+      where: where.isEmpty ? null : where,
+      whereArgs: where.isEmpty ? null : args,
+      orderBy: 'nombre',
+    );
     return filas.map(Usuario.desdeMapa).toList();
   }
 

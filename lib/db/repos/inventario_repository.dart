@@ -241,7 +241,7 @@ class InventarioRepository {
       final aud = AuditoriaRepository(_db);
       await aud.registrar(
         usuario: nombreUsuario.isNotEmpty ? nombreUsuario : 'Usuario',
-        accion: 'REGISTRO UNA ENTRADA AL INVENTARIO $numero (proveedor: ${proveedorLimpio})',
+        accion: 'REGISTRO UNA ENTRADA AL INVENTARIO $numero (proveedor: $proveedorLimpio)',
         modulo: 'INVENTARIO',
       );
 

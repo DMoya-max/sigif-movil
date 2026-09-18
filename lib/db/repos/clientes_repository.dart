@@ -1,7 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../../core/sanitizacion.dart';
-import '../../models/cliente.dart' show Cliente;
 import '../../models/factura.dart';
 import '../database.dart';
 

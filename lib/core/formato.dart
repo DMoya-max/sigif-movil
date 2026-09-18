@@ -9,11 +9,9 @@ class Formato {
   /// ejemplo: `$ 1.234.567 COP`.
   static String cop(num valor) {
     final entero = valor.round();
-    final formateado = NumberFormat('#,##0', 'es_CO')
+    final formateado = NumberFormat('#,##0', 'en_US')
         .format(entero)
-        .replaceAll(',', 'X')
-        .replaceAll('.', ',')
-        .replaceAll('X', '.');
+        .replaceAll(',', '.');
     return '\$ $formateado COP';
   }
 
@@ -64,4 +62,21 @@ class Formato {
     }
     return buffer.toString();
   }
+
+  /// Nombres de meses en español (índice 1 = enero).
+  static const List<String> meses = [
+    '',
+    'enero',
+    'febrero',
+    'marzo',
+    'abril',
+    'mayo',
+    'junio',
+    'julio',
+    'agosto',
+    'septiembre',
+    'octubre',
+    'noviembre',
+    'diciembre',
+  ];
 }

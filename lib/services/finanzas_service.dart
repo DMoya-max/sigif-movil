@@ -126,7 +126,7 @@ class FinanzasService {
     final lugar = List.filled(ids.length, '?').join(',');
     final filas = await _db.rawQuery('SELECT id, nombre FROM productos WHERE id IN ($lugar)', ids);
     for (final f in filas) {
-      map[f['id'] as int] = (f['nombre'] as String) ?? '';
+      map[f['id'] as int] = (f['nombre'] as String?) ?? '';
     }
     return map;
   }
@@ -248,7 +248,9 @@ class FinanzasService {
       }
 
       for (final f in filas) {
-        final cat = ((f['categoria'] as String?) ?? '').isEmpty ? 'Repuestos Generales' : (f['categoria'] as String);
+        final cat = ((f['categoria'] as String?) ?? '').isEmpty
+            ? 'Repuestos Generales'
+            : (f['categoria'] as String?);
         final entry = catMap.putIfAbsent(cat!, () => {
           'categoria': cat,
           'ingresos': 0.0,
@@ -268,7 +270,6 @@ class FinanzasService {
     }
 
     final resultado = <Map<String, Object?>>[];
-    var totalUnidades = 0;
     for (final e in catMap.values) {
       final ingresos = e['ingresos'] as double;
       final costos = e['costos'] as double;
@@ -278,7 +279,6 @@ class FinanzasService {
       e['total_skus'] = (e['productos'] as Set<String>).length;
       e.remove('facturas');
       e.remove('productos');
-      totalUnidades += e['unidades'] as int;
       resultado.add(e);
     }
     resultado.sort((a, b) => ((b['ingresos'] as double)).compareTo(a['ingresos'] as double));
