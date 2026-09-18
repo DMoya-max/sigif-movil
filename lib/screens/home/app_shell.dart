@@ -107,21 +107,71 @@ class _AppShellState extends State<AppShell> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final ancho = constraints.maxWidth;
-        final esAncho = ancho >= 900;
+        final esTelefono = ancho < 600;
+        final esTableta = ancho >= 600 && ancho < 1100;
         final seccion = _secciones[_indiceActual];
 
-        if (esAncho) {
-          // Layout desktop: sidebar fija + contenido
+        if (esTelefono) {
+          return Scaffold(
+            drawer: Drawer(
+              backgroundColor: ColoresSigif.sidebarBg,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(22),
+                  bottomRight: Radius.circular(22),
+                ),
+              ),
+              child: _Sidebar(
+                secciones: _secciones,
+                indiceActual: _indiceActual,
+                usuario: widget.usuario,
+                onSeleccionar: (i) {
+                  setState(() => _indiceActual = i);
+                  Navigator.of(context).pop();
+                },
+                onCerrarSesion: _cerrarSesion,
+                compact: false,
+                esDrawer: true,
+              ),
+            ),
+            body: SafeArea(
+              child: Builder(
+                builder: (ctx) => Column(
+                  children: [
+                    _Topbar(
+                      seccion: seccion,
+                      esAncho: false,
+                      compact: true,
+                      onAbrirMenu: () => Scaffold.of(ctx).openDrawer(),
+                    ),
+                    Expanded(child: seccion.pantalla),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (esTableta) {
           return Scaffold(
             body: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _Sidebar(
-                  secciones: _secciones,
-                  indiceActual: _indiceActual,
-                  usuario: widget.usuario,
-                  onSeleccionar: (i) => setState(() => _indiceActual = i),
-                  onCerrarSesion: _cerrarSesion,
+                NavigationRail(
+                  backgroundColor: ColoresSigif.sidebarBg,
+                  selectedIndex: _indiceActual,
+                  onDestinationSelected: (i) => setState(() => _indiceActual = i),
+                  labelType: NavigationRailLabelType.selected,
+                  minWidth: 72,
+                  destinations: _secciones
+                      .map(
+                        (s) => NavigationRailDestination(
+                          icon: Icon(s.icono, color: ColoresSigif.sidebarTexto),
+                          selectedIcon: Icon(s.icono, color: Colors.white),
+                          label: Text(s.titulo),
+                        ),
+                      )
+                      .toList(),
                 ),
                 const VerticalDivider(width: 1, thickness: 1),
                 Expanded(
@@ -130,9 +180,9 @@ class _AppShellState extends State<AppShell> {
                       _Topbar(
                         seccion: seccion,
                         esAncho: true,
+                        compact: false,
                         onAbrirMenu: null,
                       ),
-                      // Se reconstruye la pantalla al entrar para recargar datos.
                       Expanded(child: seccion.pantalla),
                     ],
                   ),
@@ -143,24 +193,32 @@ class _AppShellState extends State<AppShell> {
         }
 
         return Scaffold(
-          drawer: _Sidebar(
-            secciones: _secciones,
-            indiceActual: _indiceActual,
-            usuario: widget.usuario,
-            onSeleccionar: (i) {
-              setState(() => _indiceActual = i);
-              Navigator.of(context).pop();
-            },
-            onCerrarSesion: _cerrarSesion,
-          ),
-          body: Column(
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Topbar(
-                seccion: seccion,
-                esAncho: false,
-                onAbrirMenu: () => Scaffold.of(context).openDrawer(),
+              _Sidebar(
+                secciones: _secciones,
+                indiceActual: _indiceActual,
+                usuario: widget.usuario,
+                onSeleccionar: (i) => setState(() => _indiceActual = i),
+                onCerrarSesion: _cerrarSesion,
+                compact: false,
+                esDrawer: false,
               ),
-              Expanded(child: seccion.pantalla),
+              const VerticalDivider(width: 1, thickness: 1),
+              Expanded(
+                child: Column(
+                  children: [
+                    _Topbar(
+                      seccion: seccion,
+                      esAncho: true,
+                      compact: false,
+                      onAbrirMenu: null,
+                    ),
+                    Expanded(child: seccion.pantalla),
+                  ],
+                ),
+              ),
             ],
           ),
         );
@@ -173,11 +231,13 @@ class _AppShellState extends State<AppShell> {
 class _Topbar extends StatelessWidget {
   final _SeccionDef seccion;
   final bool esAncho;
+  final bool compact;
   final VoidCallback? onAbrirMenu;
 
   const _Topbar({
     required this.seccion,
     required this.esAncho,
+    required this.compact,
     required this.onAbrirMenu,
   });
 
@@ -187,8 +247,8 @@ class _Topbar extends StatelessWidget {
     final rol = usuario?.cargo ?? '';
 
     return Container(
-      height: 62,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: compact ? 56 : 62,
+      padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 16),
       decoration: const BoxDecoration(
         color: ColoresSigif.tarjeta,
         border: Border(bottom: BorderSide(color: ColoresSigif.borde)),
@@ -200,16 +260,20 @@ class _Topbar extends StatelessWidget {
               icon: const Icon(Icons.menu),
               onPressed: onAbrirMenu,
               tooltip: 'Menú',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
             const SizedBox(width: 4),
           ],
-          Icon(seccion.icono, color: ColoresSigif.azulPrimario, size: 22),
-          const SizedBox(width: 10),
+          Icon(seccion.icono, color: ColoresSigif.azulPrimario, size: compact ? 20 : 22),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               seccion.titulo,
-              style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: compact ? 16 : 18,
+                fontWeight: FontWeight.w800,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -218,27 +282,47 @@ class _Topbar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 CircleAvatar(
-                  radius: 16,
+                  radius: compact ? 13 : 16,
                   backgroundColor: ColoresSigif.azulPrimario,
                   child: Text(
                     usuario.nombre.isNotEmpty ? usuario.nombre[0].toUpperCase() : '?',
                     style: const TextStyle(
-                        color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(usuario.nombre,
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w700)),
-                    Text(rol,
-                        style: const TextStyle(
-                            fontSize: 11, color: ColoresSigif.textoMitigado)),
-                  ],
-                ),
+                if (!compact) ...[
+                  const SizedBox(width: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 140),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          usuario.nombre,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          rol,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: ColoresSigif.textoMitigado,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
         ],
@@ -254,6 +338,8 @@ class _Sidebar extends StatelessWidget {
   final Usuario usuario;
   final ValueChanged<int> onSeleccionar;
   final VoidCallback onCerrarSesion;
+  final bool compact;
+  final bool esDrawer;
 
   const _Sidebar({
     required this.secciones,
@@ -261,11 +347,13 @@ class _Sidebar extends StatelessWidget {
     required this.usuario,
     required this.onSeleccionar,
     required this.onCerrarSesion,
+    this.compact = false,
+    this.esDrawer = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    const ancho = 260.0;
+    final ancho = esDrawer ? 280.0 : (compact ? 220.0 : 260.0);
     return Container(
       width: ancho,
       color: ColoresSigif.sidebarBg,
@@ -277,35 +365,65 @@ class _Sidebar extends StatelessWidget {
               child: Column(
                 children: [
                   // Marca
-                  Padding(
+                  Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: Color(0xFF38404F), width: 1),
+                      ),
+                    ),
                     child: Row(
                       children: [
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.asset(
-                            'assets/img/logo123.png',
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, _, _) => const Icon(
-                                Icons.storefront, color: Colors.white, size: 32),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            width: compact ? 34 : 42,
+                            height: compact ? 34 : 42,
+                            color: ColoresSigif.azulPrimario,
+                            alignment: Alignment.center,
+                            child: Image.asset(
+                              'assets/img/logo123.png',
+                              width: compact ? 22 : 28,
+                              height: compact ? 22 : 28,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => const Icon(
+                                Icons.storefront,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'SIGIF',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1,
+                        if (!compact) ...[
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'SIGIF',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                                Text(
+                                  'Panel de control',
+                                  style: TextStyle(
+                                    color: ColoresSigif.sidebarTexto,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
-                  const Divider(color: Color(0xFF38404F), height: 1),
                   const SizedBox(height: 10),
                   // Menú
                   Expanded(
@@ -313,9 +431,13 @@ class _Sidebar extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       children: [
                         for (var i = 0; i < secciones.length; i++)
-                          _itemMenu(secciones[i], i == indiceActual, () {
-                            onSeleccionar(i);
-                          }),
+                          _itemMenu(
+                            secciones[i],
+                            i == indiceActual,
+                            () => onSeleccionar(i),
+                            compact: compact,
+                            mostrarTexto: !compact || esDrawer,
+                          ),
                       ],
                     ),
                   ),
@@ -325,32 +447,48 @@ class _Sidebar extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     child: Column(
                       children: [
-                        Row(
-                          children: [
-                            const CircleAvatar(
-                              radius: 16,
-                              backgroundColor: ColoresSigif.azulPrimario,
-                              child: Icon(Icons.person, color: Colors.white, size: 18),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(usuario.nombre,
-                                      style: const TextStyle(
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A3242),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: compact ? 14 : 16,
+                                backgroundColor: ColoresSigif.azulPrimario,
+                                child: const Icon(Icons.person, color: Colors.white, size: 18),
+                              ),
+                              if (!compact) ...[
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        usuario.nombre,
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 13,
-                                          fontWeight: FontWeight.w600),
-                                      overflow: TextOverflow.ellipsis),
-                                  Text(usuario.cargo,
-                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        usuario.cargo,
+                                        style: const TextStyle(
                                           color: ColoresSigif.sidebarTexto,
-                                          fontSize: 11)),
-                                ],
-                              ),
-                            ),
-                          ],
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 8),
                         SizedBox(
@@ -358,11 +496,14 @@ class _Sidebar extends StatelessWidget {
                           child: OutlinedButton.icon(
                             onPressed: onCerrarSesion,
                             icon: const Icon(Icons.logout, size: 18),
-                            label: const Text('Cerrar sesión'),
+                            label: Text(compact ? 'Salir' : 'Cerrar sesión'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: ColoresSigif.sidebarTexto,
                               side: const BorderSide(color: Color(0xFF38404F)),
                               padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                           ),
                         ),
@@ -378,36 +519,49 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _itemMenu(_SeccionDef s, bool seleccionado, VoidCallback onTap) {
+  Widget _itemMenu(
+    _SeccionDef s,
+    bool seleccionado,
+    VoidCallback onTap, {
+    bool compact = false,
+    bool mostrarTexto = true,
+  }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 10 : 12,
+              vertical: 12,
+            ),
             decoration: BoxDecoration(
               color: seleccionado ? ColoresSigif.azulPrimario : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
-                Icon(s.icono,
-                    size: 20,
-                    color: seleccionado ? Colors.white : ColoresSigif.sidebarTexto),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    s.titulo,
-                    style: TextStyle(
-                      color: seleccionado ? Colors.white : ColoresSigif.sidebarTexto,
-                      fontSize: 14,
-                      fontWeight: seleccionado ? FontWeight.w700 : FontWeight.w500,
+                Icon(
+                  s.icono,
+                  size: 20,
+                  color: seleccionado ? Colors.white : ColoresSigif.sidebarTexto,
+                ),
+                if (mostrarTexto) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      s.titulo,
+                      style: TextStyle(
+                        color: seleccionado ? Colors.white : ColoresSigif.sidebarTexto,
+                        fontSize: 14,
+                        fontWeight: seleccionado ? FontWeight.w700 : FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

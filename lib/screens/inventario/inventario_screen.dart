@@ -5,6 +5,7 @@ import '../../db/repos/inventario_repository.dart';
 import '../../db/repos/productos_repository.dart';
 import '../../models/inventario.dart';
 import '../../models/producto.dart';
+import '../../services/compartir.dart';
 import '../../services/pdf_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -200,9 +201,12 @@ class _HistorialEntradasState extends State<_HistorialEntradas> {
                   icon: const Icon(Icons.picture_as_pdf_outlined),
                   tooltip: 'Exportar PDF',
                   onPressed: () async {
-                    final archivo = await PdfService.generoTicketEntrada(e.id!);
-                    await PdfService.compartirArchivo(
-                        archivo, 'Ticket de ${e.numeroFactura()}');
+                    final bytes = await PdfService.generoTicketEntrada(e.id!);
+                    await Compartir.guardar(
+                      bytes: bytes,
+                      nombre: 'entrada_${e.id}.pdf',
+                      mensaje: 'Ticket de ${e.numeroFactura()}',
+                    );
                   },
                 ),
               ],

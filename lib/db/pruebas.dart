@@ -1,0 +1,1 @@
+export 'pruebas_io.dart' if (dart.library.js_interop) 'pruebas_web.dart';

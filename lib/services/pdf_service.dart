@@ -1,9 +1,7 @@
-import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:share_plus/share_plus.dart';
 
 import '../core/formato.dart';
 import '../db/repos/clientes_repository.dart';
@@ -15,12 +13,12 @@ import '../models/factura.dart';
 import '../models/inventario.dart';
 
 /// Genera tickets PDF de factura y entrada de inventario (estampados con la
-/// paleta SIGIF) y los comparte/guarda en el dispositivo.
+/// paleta SIGIF).
 class PdfService {
   PdfService._();
 
-  /// Genera y comparte el ticket PDF de una factura de venta.
-  static Future<File> generoTicketFactura(int facturaId) async {
+  /// Genera los bytes del ticket PDF de una factura de venta.
+  static Future<Uint8List> generoTicketFactura(int facturaId) async {
     final repo = await FacturasRepository.abrir();
     final factura = await repo.obtenerPorId(facturaId);
     if (factura == null) {
@@ -47,8 +45,8 @@ class PdfService {
     return _guardarDocumento(document, 'factura_$facturaId.pdf');
   }
 
-  /// Genera y comparte el ticket PDF de una entrada de inventario.
-  static Future<File> generoTicketEntrada(int entradaId) async {
+  /// Genera los bytes del ticket PDF de una entrada de inventario.
+  static Future<Uint8List> generoTicketEntrada(int entradaId) async {
     final repo = await InventarioRepository.abrir();
     final entrada = await repo.obtenerEntrada(entradaId);
     if (entrada == null) {
@@ -68,19 +66,9 @@ class PdfService {
     return _guardarDocumento(document, 'entrada_$entradaId.pdf');
   }
 
-  static Future<File> _guardarDocumento(pw.Document doc, String nombre) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$nombre');
-    final bytes = await doc.save();
-    await file.writeAsBytes(bytes);
-    return file;
-  }
-
-  /// Comparte un archivo generado por los canales del SO.
-  static Future<void> compartirArchivo(File archivo, String mensaje) async {
-    await SharePlus.instance.share(
-      ShareParams(files: [XFile(archivo.path)], text: mensaje),
-    );
+  static Future<Uint8List> _guardarDocumento(
+      pw.Document doc, String nombre) async {
+    return doc.save();
   }
 
   // ------------------------------------------------------------------
@@ -109,7 +97,7 @@ class PdfService {
           children: [
             pw.Text('FACTURA #${factura.id}',
                 style:
-                    const pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
             pw.Text(Formato.fechaHora(factura.fecha)),
           ],
         ),
@@ -154,7 +142,7 @@ class PdfService {
               pw.Text('Subtotal: ${Formato.cop(factura.total + factura.descuento)}'),
               pw.Text('Descuento: ${Formato.cop(factura.descuento)}'),
               pw.Text('Total: ${Formato.cop(factura.total)}',
-                  style: const pw.TextStyle(
+                  style: pw.TextStyle(
                       fontWeight: pw.FontWeight.bold, fontSize: 15)),
               pw.Text('Base gravable: ${Formato.cop(factura.baseGravable)}'),
               pw.Text(
@@ -200,7 +188,7 @@ class PdfService {
           children: [
             pw.Text('ENTRADA ${entrada.numeroFactura()}',
                 style:
-                    const pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
             pw.Text(Formato.fechaHora(entrada.fecha)),
           ],
         ),

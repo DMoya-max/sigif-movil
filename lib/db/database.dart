@@ -1,20 +1,32 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import '../core/constantes.dart';
 import '../services/password_service.dart';
+import 'pruebas.dart';
 
 bool _sqfliteInicializado = false;
 
-/// Inicializa el factory de SQLite multiplataforma (Android/iOS reales y
-/// desktop Linux/Windows/macOS para pruebas durante el desarrollo).
+/// Inicializa el factory de SQLite multiplataforma (Android/iOS, desktop
+/// Linux/Windows/macOS y web via WebAssembly).
 void inicializarSqflite() {
   if (_sqfliteInicializado) return;
   _sqfliteInicializado = true;
-  sqfliteFfiInit();
-  databaseFactory = databaseFactoryFfi;
+
+  if (kIsWeb) {
+    databaseFactory = databaseFactoryFfiWeb;
+    return;
+  }
+
+  // En Android/iOS no se debe forzar FFI: usa el backend nativo de sqflite.
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
 }
 
 /// Base de datos local de SIGIF: replica el esquema de los modelos Django.
@@ -49,7 +61,7 @@ class AppDatabase {
 
   /// En `flutter test` cada archivo corre en su propio isolate; usar una base
   /// en memoria evita bloqueos al compartir el mismo archivo `.db`.
-  bool get _enPruebas => Platform.environment['FLUTTER_TEST'] == 'true';
+  bool get _enPruebas => esEntornoPruebas;
 
   Future<void> _crearEsquemaYSembrar(Database db, int version) async {
     await db.execute('''

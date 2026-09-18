@@ -5,6 +5,7 @@ import '../../core/formato.dart';
 import '../../db/repos/clientes_repository.dart';
 import '../../db/repos/facturas_repository.dart';
 import '../../models/factura.dart';
+import '../../services/compartir.dart';
 import '../../services/pdf_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -71,9 +72,12 @@ class _FacturasListScreenState extends State<FacturasListScreen> {
                   icon: const Icon(Icons.picture_as_pdf_outlined),
                   tooltip: 'Exportar PDF',
                   onPressed: () async {
-                    final archivo = await PdfService.generoTicketFactura(f.id!);
-                    await PdfService.compartirArchivo(
-                        archivo, 'Factura #${f.id}');
+                    final bytes = await PdfService.generoTicketFactura(f.id!);
+                    await Compartir.guardar(
+                      bytes: bytes,
+                      nombre: 'factura_${f.id}.pdf',
+                      mensaje: 'Factura #${f.id}',
+                    );
                   },
                 ),
               ],
