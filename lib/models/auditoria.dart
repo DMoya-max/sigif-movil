@@ -21,11 +21,16 @@ class Auditoria {
         'fecha': fecha.toIso8601String(),
       };
 
-  factory Auditoria.desdeMapa(Map<String, Object?> m) => Auditoria(
-        id: m['id'] as int?,
-        usuario: (m['usuario'] as String?) ?? '',
-        accion: (m['accion'] as String?) ?? '',
-        modulo: (m['modulo'] as String?) ?? '',
-        fecha: DateTime.parse(m['fecha'] as String),
+  factory Auditoria.desdeMapa(Map<String, Object?> m) => Auditoria.fromJson(m);
+
+  factory Auditoria.fromJson(Map<String, dynamic> json) => Auditoria(
+        id: json['id'] is int
+            ? json['id'] as int
+            : int.tryParse(json['id']?.toString() ?? ''),
+        usuario: json['usuario']?.toString() ?? '',
+        accion: json['accion']?.toString() ?? '',
+        modulo: json['modulo']?.toString() ?? '',
+        fecha: DateTime.tryParse(json['fecha']?.toString() ?? '')?.toLocal() ??
+            DateTime.now(),
       );
 }

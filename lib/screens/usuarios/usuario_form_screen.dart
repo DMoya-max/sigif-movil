@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../core/constantes.dart';
 import '../../core/sanitizacion.dart';
-import '../../db/database.dart';
 import '../../db/repos/auditoria_repository.dart';
-import '../../db/repos/usuarios_repository.dart';
 import '../../models/usuario.dart';
-import '../../services/password_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/usuarios_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 
-/// Formulario de creación/edición de usuarios con reglas de escalada.
+/// Formulario de creación/edición de usuarios conectado a la API REST
+/// con la matriz de permisos, escalada de roles y validaciones de unicidad del proyecto.
 class UsuarioFormScreen extends StatefulWidget {
   final Usuario? usuario;
   final Usuario? actor;
@@ -23,39 +23,42 @@ class UsuarioFormScreen extends StatefulWidget {
 
 class _UsuarioFormScreenState extends State<UsuarioFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _api = UsuariosApiService.instance;
   late final TextEditingController _nombre;
   late final TextEditingController _documento;
   late final TextEditingController _telefono;
   late final TextEditingController _correo;
   late final TextEditingController _clave;
   late String _cargo;
+  late bool _activo;
   bool _guardando = false;
 
   bool get _esNuevo => widget.usuario == null;
 
-  bool _puedeSeleccionarCargo(Usuario? actor, Usuario? target) {
-    if (target != null && target.esSuperadminPrincipal) return false;
-    if (actor == null) return false;
-    if (actor.cargo == 'SuperAdmin') return true;
-    // Admin sólo gestiona Empleado
-    return target == null || target.cargo == 'Empleado';
-  }
+  Usuario? get _actor => widget.actor ?? SessionService.instance.usuario;
 
-  List<String> get _cargosPermitidos {
-    if (!_puedeSeleccionarCargo(widget.actor, widget.usuario)) {
-      return [_cargo];
-    }
-    if (widget.actor?.cargo == 'SuperAdmin') {
-      return Constantes.cargos;
-    }
-    return [Constantes.rolEmpleado];
-  }
+  bool get _esPropioUsuario =>
+      !_esNuevo && _actor != null && widget.usuario?.id == _actor?.id;
 
-  String? get _cargoInicial {
+  bool get _puedeEditarCargo =>
+      _actor?.puedeCambiarCargo(target: widget.usuario) ?? false;
+
+  bool get _puedeEditarEstado {
+    if (_esNuevo) return true;
+    final actor = _actor;
     final target = widget.usuario;
-    if (target != null) return target.cargo;
-    if (widget.actor?.cargo == 'SuperAdmin') return Constantes.rolEmpleado;
-    return Constantes.rolEmpleado;
+    if (actor == null || target == null) return false;
+    return actor.puedeCambiarEstadoUsuario(target);
+  }
+
+  List<String> get _cargosDisponibles {
+    final actor = _actor;
+    if (actor == null) return [_cargo];
+    final permitidos = actor.cargosAsignables(target: widget.usuario);
+    if (!permitidos.contains(_cargo)) {
+      return [...permitidos, _cargo];
+    }
+    return permitidos;
   }
 
   @override
@@ -67,7 +70,8 @@ class _UsuarioFormScreenState extends State<UsuarioFormScreen> {
     _telefono = TextEditingController(text: u?.telefono ?? '');
     _correo = TextEditingController(text: u?.correo ?? '');
     _clave = TextEditingController();
-    _cargo = _cargoInicial!;
+    _cargo = u?.cargo ?? Constantes.rolEmpleado;
+    _activo = u?.activo ?? true;
   }
 
   @override
@@ -82,59 +86,150 @@ class _UsuarioFormScreenState extends State<UsuarioFormScreen> {
 
   Future<void> _guardar() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final actor = _actor;
+    if (actor == null) {
+      notificar(context, 'Debes iniciar sesión para continuar.', error: true);
+      return;
+    }
+
+    // 1. Validación de permisos y escalada de privilegios (apps/usuarios/views.py + core/decoradores.py)
+    if (_esNuevo) {
+      if (!actor.puedeGestionarUsuarios) {
+        notificar(
+          context,
+          'No tienes permisos para crear usuarios.',
+          error: true,
+        );
+        return;
+      }
+      if (_cargo == Constantes.rolSuperAdmin && !actor.esSuperAdmin) {
+        notificar(
+          context,
+          'Solo el SuperAdmin puede crear otro SuperAdmin.',
+          error: true,
+        );
+        return;
+      }
+    } else {
+      final target = widget.usuario!;
+      final motivoRechazo = actor.motivoRechazoEditar(target);
+      if (motivoRechazo != null) {
+        notificar(context, motivoRechazo, error: true);
+        return;
+      }
+      if (!_esPropioUsuario &&
+          _cargo == Constantes.rolSuperAdmin &&
+          target.cargo != Constantes.rolSuperAdmin &&
+          !actor.esSuperAdmin) {
+        notificar(
+          context,
+          'Un Administrador no puede asignar el rol de SuperAdmin.',
+          error: true,
+        );
+        return;
+      }
+    }
+
     setState(() => _guardando = true);
 
-    final repo = await UsuariosRepository.abrir();
-    final nombre = Sanitizacion.limpiarNonNull(_nombre.text.trim());
-    final documento = _documento.text.trim();
+    // Normalizar espacios múltiples del nombre igual que clean_nombre en Django
+    final nombreLimpio = Sanitizacion.limpiarNonNull(_nombre.text.trim())
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .join(' ');
+    // En edición el documento original no se altera (editar_usuarios.html)
+    final documento = _esNuevo
+        ? _documento.text.trim()
+        : widget.usuario!.documento.trim();
     final telefono = _telefono.text.trim();
     final correo = _correo.text.trim().toLowerCase();
+    final clave = _clave.text.trim();
 
     try {
+      // 2. Validación de unicidad en el sistema (clean_documento, clean_telefono, clean_correo)
+      final errorUnicidad = await _api.validarUnicidad(
+        documento: documento,
+        telefono: telefono,
+        correo: correo,
+        excluirId: widget.usuario?.id,
+      );
+      if (errorUnicidad != null) {
+        if (!mounted) return;
+        setState(() => _guardando = false);
+        notificar(context, errorUnicidad, error: true);
+        return;
+      }
+
       if (_esNuevo) {
-        final hash = await PasswordService.crearHash(_clave.text);
-        await repo.crear(Usuario(
-          nombre: nombre,
-          documento: documento,
-          contra: hash,
-          telefono: telefono,
-          correo: correo,
-          activo: true,
-          fechaInicio: DateTime.now(),
-          cargo: _cargo,
-          esSuperadminPrincipal: false,
-        ));
+        await _api.crear(
+          Usuario(
+            nombre: nombreLimpio,
+            documento: documento,
+            telefono: telefono,
+            correo: correo,
+            activo: _activo,
+            fechaInicio: DateTime.now(),
+            cargo: _cargo,
+            esSuperadminPrincipal: false,
+          ),
+          clavePlana: clave,
+        );
       } else {
         final u = widget.usuario!;
-        await repo.actualizar(Usuario(
-          id: u.id,
-          nombre: nombre,
-          documento: documento,
-          contra: u.contra,
-          telefono: telefono,
-          correo: correo,
-          activo: u.activo,
-          fechaInicio: u.fechaInicio,
-          cargo: _puedeSeleccionarCargo(widget.actor, u) ? _cargo : u.cargo,
-          esSuperadminPrincipal: u.esSuperadminPrincipal,
-        ));
-        if (_clave.text.trim().isNotEmpty) {
-          final hash = await PasswordService.crearHash(_clave.text);
-          await _dbRawNuevaClave(u.id!, hash);
+        // Reglas de protección al guardar (apps/usuarios/views.py líneas 304-324):
+        // - El propio usuario o un Empleado nunca cambia su rol.
+        // - El SuperAdmin principal conserva siempre rol SuperAdmin y activo = true.
+        var cargoFinal = _puedeEditarCargo ? _cargo : u.cargo;
+        var activoFinal = _puedeEditarEstado ? _activo : u.activo;
+
+        if (_esPropioUsuario || actor.esEmpleado) {
+          cargoFinal = u.cargo;
+        }
+        if (u.esSuperadminPrincipal) {
+          cargoFinal = Constantes.rolSuperAdmin;
+          activoFinal = true;
+        }
+
+        final actualizado = await _api.actualizar(
+          Usuario(
+            id: u.id,
+            nombre: nombreLimpio,
+            documento: documento,
+            contra: u.contra,
+            telefono: telefono,
+            correo: correo,
+            activo: activoFinal,
+            fechaInicio: u.fechaInicio ?? DateTime.now(),
+            cargo: cargoFinal,
+            esSuperadminPrincipal: u.esSuperadminPrincipal,
+          ),
+          nuevaClavePlana: clave.isEmpty ? null : clave,
+        );
+
+        if (_esPropioUsuario) {
+          SessionService.instance.actualizarUsuario(actualizado);
         }
       }
 
-      final aud = await AuditoriaRepository.abrir();
-      await aud.registrar(
-        usuario: widget.actor?.nombre ?? '',
-        accion: _esNuevo
-            ? 'CREÓ EL USUARIO $nombre ($_cargo)'
-            : 'EDITÓ EL USUARIO $nombre',
-        modulo: 'USUARIOS',
-      );
+      try {
+        final aud = await AuditoriaRepository.abrir();
+        await aud.registrar(
+          usuario: actor.nombre,
+          accion: _esNuevo
+              ? 'CREO USUARIO: $nombreLimpio'
+              : 'ACTUALIZÓ PERFIL/USUARIO: $nombreLimpio',
+          modulo: 'USUARIOS',
+        );
+      } catch (_) {}
 
       if (!mounted) return;
-      notificar(context, _esNuevo ? 'Usuario creado' : 'Usuario actualizado');
+      notificar(
+        context,
+        _esNuevo
+            ? 'Usuario creado correctamente.'
+            : 'El usuario $nombreLimpio fue actualizado correctamente.',
+      );
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
@@ -143,34 +238,13 @@ class _UsuarioFormScreenState extends State<UsuarioFormScreen> {
     }
   }
 
-  Future<void> _dbRawNuevaClave(int id, String hash) async {
-    final db = await AppDatabase.instance.db;
-    await db.update('usuarios', {'contra': hash}, where: 'id = ?', whereArgs: [id]);
-  }
-
-  String? _validarObligatorio(String? v, String campo) {
-    if (v == null || v.trim().isEmpty) return 'Ingresa $campo';
-    return null;
-  }
-
-  Future<String?> _validarUnico() async {
-    final repo = await UsuariosRepository.abrir();
-    final doc = _documento.text.trim();
-    final tel = _telefono.text.trim();
-    final corr = _correo.text.trim().toLowerCase();
-    final id = widget.usuario?.id;
-    if (await repo.existeDocumento(doc, excluirId: id)) return 'Documento ya registrado';
-    if (await repo.existeTelefono(tel, excluirId: id)) return 'Teléfono ya registrado';
-    if (await repo.existeCorreo(corr, excluirId: id)) return 'Correo ya registrado';
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final esEditableRol = _puedeSeleccionarCargo(widget.actor, widget.usuario);
+    final cargos = _cargosDisponibles;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_esNuevo ? 'Nuevo usuario' : 'Editar usuario'),
+        title: Text(_esNuevo ? 'Nuevo usuario' : 'Actualizar usuario'),
       ),
       body: Form(
         key: _formKey,
@@ -180,44 +254,103 @@ class _UsuarioFormScreenState extends State<UsuarioFormScreen> {
             TextFormField(
               controller: _nombre,
               textCapitalization: TextCapitalization.words,
-              validator: (v) => _validarObligatorio(v, 'el nombre'),
-              decoration: const InputDecoration(labelText: 'Nombre completo *'),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'El nombre del empleado es obligatorio para continuar.';
+                }
+                final texto = v.trim();
+                if (!RegExp(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$').hasMatch(texto)) {
+                  return 'El nombre solo puede contener letras y espacios.';
+                }
+                if (!RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]').hasMatch(texto)) {
+                  return 'El nombre debe contener al menos una letra.';
+                }
+                return null;
+              },
+              decoration: const InputDecoration(
+                labelText: 'Nombre del empleado *',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
             ),
             const SizedBox(height: 14),
             TextFormField(
               controller: _documento,
-              keyboardType: TextInputType.text,
-              validator: (v) => _validarObligatorio(v, 'el documento'),
-              decoration: const InputDecoration(labelText: 'Documento *'),
+              readOnly: !_esNuevo,
+              enabled: _esNuevo,
+              keyboardType: TextInputType.number,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'El documento de identidad es obligatorio para continuar.';
+                }
+                if (!RegExp(r'^\d+$').hasMatch(v.trim())) {
+                  return 'El documento solo puede contener números.';
+                }
+                return null;
+              },
+              decoration: InputDecoration(
+                labelText: 'Documento de identidad *',
+                prefixIcon: const Icon(Icons.badge_outlined),
+                helperText: _esNuevo
+                    ? null
+                    : 'El documento de identidad es de solo lectura al editar.',
+              ),
             ),
             const SizedBox(height: 14),
             TextFormField(
               controller: _telefono,
               keyboardType: TextInputType.phone,
-              validator: (v) => _validarObligatorio(v, 'el teléfono'),
-              decoration: const InputDecoration(labelText: 'Teléfono *'),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'El teléfono es obligatorio para continuar.';
+                }
+                if (!RegExp(r'^\d+$').hasMatch(v.trim())) {
+                  return 'El teléfono solo puede contener números.';
+                }
+                return null;
+              },
+              decoration: const InputDecoration(
+                labelText: 'Teléfono de contacto *',
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
             ),
             const SizedBox(height: 14),
             TextFormField(
               controller: _correo,
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Ingresa el correo';
-                if (!v.contains('@')) return 'Correo inválido';
+                if (v == null || v.trim().isEmpty) {
+                  return 'El correo electrónico es obligatorio para continuar.';
+                }
+                if (!v.contains('@') || !v.contains('.')) {
+                  return 'Ingresa un correo electrónico válido.';
+                }
                 return null;
               },
-              decoration: const InputDecoration(labelText: 'Correo *'),
+              decoration: const InputDecoration(
+                labelText: 'Correo electrónico *',
+                prefixIcon: Icon(Icons.mail_outline),
+              ),
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
               initialValue: _cargo,
               items: [
-                for (final c in _cargosPermitidos)
+                for (final c in cargos)
                   DropdownMenuItem(value: c, child: Text(c)),
               ],
-              decoration: const InputDecoration(labelText: 'Cargo'),
-              onChanged: esEditableRol
-                  ? (v) => setState(() => _cargo = v!)
+              decoration: InputDecoration(
+                labelText: 'Rol / Cargo en el sistema *',
+                prefixIcon: const Icon(Icons.verified_user_outlined),
+                helperText: !_puedeEditarCargo
+                    ? 'No puedes modificar tu propio rol ni el de un nivel superior.'
+                    : (_actor?.esAdmin == true
+                        ? 'Como Admin puedes asignar Admin o Empleado (no SuperAdmin).'
+                        : null),
+              ),
+              onChanged: _puedeEditarCargo
+                  ? (v) {
+                      if (v != null) setState(() => _cargo = v);
+                    }
                   : null,
             ),
             const SizedBox(height: 14),
@@ -226,19 +359,41 @@ class _UsuarioFormScreenState extends State<UsuarioFormScreen> {
               obscureText: true,
               validator: (v) {
                 if (_esNuevo && (v == null || v.isEmpty)) {
-                  return 'La contraseña es obligatoria';
+                  return 'La contraseña es obligatoria.';
                 }
-                if (v != null && v.isNotEmpty && v.length < 6) {
-                  return 'Mínimo 6 caracteres';
+                if (v != null && v.isNotEmpty && v.length < 8) {
+                  return 'La contraseña debe tener como mínimo 8 caracteres.';
                 }
                 return null;
               },
               decoration: InputDecoration(
                 labelText: _esNuevo
-                    ? 'Contraseña *'
-                    : 'Nueva contraseña (opcional)',
-                helperText: _esNuevo ? null : 'Dejar vacío para conservar.',
+                    ? 'Contraseña (mín. 8 caracteres) *'
+                    : 'Contraseña (opcional)',
+                prefixIcon: const Icon(Icons.key_outlined),
+                helperText: _esNuevo
+                    ? null
+                    : 'Deja este campo vacío si no deseas cambiar la contraseña.',
               ),
+            ),
+            const SizedBox(height: 14),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Usuario activo en el sistema'),
+              subtitle: Text(
+                _puedeEditarEstado
+                    ? 'Permite el acceso al sistema'
+                    : 'No puedes desactivar tu propio usuario ni al SuperAdmin',
+                style: TextStyle(
+                  color: _puedeEditarEstado
+                      ? ColoresSigif.textoMitigado
+                      : ColoresSigif.textoMitigado.withValues(alpha: 0.8),
+                ),
+              ),
+              value: _activo,
+              onChanged: _puedeEditarEstado
+                  ? (v) => setState(() => _activo = v)
+                  : null,
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -250,23 +405,13 @@ class _UsuarioFormScreenState extends State<UsuarioFormScreen> {
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5),
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
                       )
                     : const Icon(Icons.save_outlined),
-                label: Text(_guardando ? 'Guardando...' : 'Guardar'),
+                label: Text(_guardando ? 'Guardando...' : 'Guardar Cambios'),
               ),
-            ),
-            const SizedBox(height: 12),
-            FutureBuilder<String?>(
-              future: _validarUnico(),
-              builder: (context, snap) {
-                if (snap.data == null) return const SizedBox.shrink();
-                return Text(
-                  snap.data!,
-                  style: const TextStyle(
-                      color: ColoresSigif.peligro, fontSize: 12.5),
-                );
-              },
             ),
           ],
         ),

@@ -27,27 +27,36 @@ class _ProductoDetalleScreenState extends State<ProductoDetalleScreen> {
   }
 
   Future<_DatosDetalle> _cargar() async {
-    final db = await AppDatabase.instance.db;
-    final inv = InventarioRepository(db);
-    final fac = FacturasRepository(db);
-    final costoReciente = await inv.precioCompraReciente(widget.producto.id!);
-    final vendidos = await fac.productosFacturados();
+    try {
+      final db = await AppDatabase.instance.db;
+      final inv = InventarioRepository(db);
+      final fac = FacturasRepository(db);
+      final costoReciente =
+          await inv.precioCompraReciente(widget.producto.id!);
+      final vendidos = await fac.productosFacturados();
 
-    double unidadesVendidas = 0;
-    double ingresos = 0;
-    for (final v in vendidos) {
-      if (v['id'] == widget.producto.id) {
-        unidadesVendidas = (v['unidades'] as num?)?.toDouble() ?? 0;
-        ingresos = (v['ingresos'] as num?)?.toDouble() ?? 0;
-        break;
+      double unidadesVendidas = 0;
+      double ingresos = 0;
+      for (final v in vendidos) {
+        if (v['id'] == widget.producto.id) {
+          unidadesVendidas = (v['unidades'] as num?)?.toDouble() ?? 0;
+          ingresos = (v['ingresos'] as num?)?.toDouble() ?? 0;
+          break;
+        }
       }
-    }
 
-    return _DatosDetalle(
-      costoReciente: costoReciente,
-      unidadesVendidas: unidadesVendidas,
-      ingresos: ingresos,
-    );
+      return _DatosDetalle(
+        costoReciente: costoReciente,
+        unidadesVendidas: unidadesVendidas,
+        ingresos: ingresos,
+      );
+    } catch (_) {
+      return const _DatosDetalle(
+        costoReciente: null,
+        unidadesVendidas: 0,
+        ingresos: 0,
+      );
+    }
   }
 
   @override
@@ -60,7 +69,7 @@ class _ProductoDetalleScreenState extends State<ProductoDetalleScreen> {
         builder: (context, snap) {
           final datos = snap.data;
           return ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             children: [
               Card(
                 child: Padding(
@@ -69,23 +78,31 @@ class _ProductoDetalleScreenState extends State<ProductoDetalleScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(p.nombre,
-                                    style: const TextStyle(
-                                        fontSize: 20, fontWeight: FontWeight.w800)),
+                                Text(
+                                  p.nombre,
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
                                 Text(
-                                    '${p.categoria} · Creado ${Formato.fecha(p.fechaCreacion)}',
-                                    style: const TextStyle(
-                                        fontSize: 12.5,
-                                        color: ColoresSigif.textoMitigado)),
+                                  '${p.categoria} · Creado ${Formato.fecha(p.fechaCreacion)}',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: ColoresSigif.textoMitigado,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
+                          const SizedBox(width: 8),
                           StockBadge(activo: p.activo, stock: p.stock),
                         ],
                       ),
@@ -93,25 +110,41 @@ class _ProductoDetalleScreenState extends State<ProductoDetalleScreen> {
                       _fila('Precio de venta', Formato.cop(p.precio)),
                       _fila('Stock actual', '${p.stock} unidades'),
                       _fila(
-                          'Costo reciente de compra',
-                          datos == null
-                              ? '...'
-                              : datos.costoReciente == null
-                                  ? 'Sin compras registradas'
-                                  : Formato.cop(datos.costoReciente!)),
+                        'Costo reciente de compra',
+                        datos == null
+                            ? '...'
+                            : datos.costoReciente == null
+                                ? 'Sin compras registradas'
+                                : Formato.cop(datos.costoReciente!),
+                      ),
                       const SizedBox(height: 4),
-                      _fila('Unidades vendidas',
-                          datos == null ? '...' : Formato.miles(datos.unidadesVendidas)),
-                      _fila('Ingresos generados',
-                          datos == null ? '...' : Formato.cop(datos.ingresos)),
-                      if (p.descripcion != null && p.descripcion!.isNotEmpty) ...[
+                      _fila(
+                        'Unidades vendidas',
+                        datos == null
+                            ? '...'
+                            : Formato.miles(datos.unidadesVendidas),
+                      ),
+                      _fila(
+                        'Ingresos generados',
+                        datos == null ? '...' : Formato.cop(datos.ingresos),
+                      ),
+                      if (p.descripcion != null &&
+                          p.descripcion!.isNotEmpty) ...[
                         const Divider(height: 24),
-                        Text('Descripción',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 13)),
+                        const Text(
+                          'Descripción',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
                         const SizedBox(height: 4),
-                        Text(p.descripcion!,
-                            style: const TextStyle(color: ColoresSigif.textoCuerpo)),
+                        Text(
+                          p.descripcion!,
+                          style: const TextStyle(
+                            color: ColoresSigif.textoCuerpo,
+                          ),
+                        ),
                       ],
                     ],
                   ),
@@ -130,8 +163,17 @@ class _ProductoDetalleScreenState extends State<ProductoDetalleScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(etiqueta, style: const TextStyle(color: ColoresSigif.textoMitigado)),
-          Text(valor, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Flexible(
+            child: Text(
+              etiqueta,
+              style: const TextStyle(color: ColoresSigif.textoMitigado),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            valor,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
         ],
       ),
     );

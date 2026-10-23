@@ -149,7 +149,7 @@ class StockBadge extends StatelessWidget {
   }
 }
 
-/// Encabezado consistente de cada pantalla del módulo.
+/// Encabezado adaptable (responsive para iPhone/Samsung y escritorio).
 class TituloPagina extends StatelessWidget {
   final String titulo;
   final String? subtitulo;
@@ -164,34 +164,83 @@ class TituloPagina extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final esMovil = constraints.maxWidth < 560;
+
+        if (esMovil) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                titulo,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: ColoresSigif.textoOscuro,
+                ),
+              ),
+              if (subtitulo != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitulo!,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: ColoresSigif.textoMitigado,
+                  ),
+                ),
+              ],
+              if (acciones.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: acciones,
+                ),
+              ],
+              const SizedBox(height: 16),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(titulo,
-                      style: const TextStyle(
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        titulo,
+                        style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
-                          color: ColoresSigif.textoOscuro)),
-                  if (subtitulo != null) ...[
-                    const SizedBox(height: 2),
-                    Text(subtitulo!,
-                        style: const TextStyle(
-                            fontSize: 14, color: ColoresSigif.textoMitigado)),
-                  ],
-                ],
-              ),
+                          color: ColoresSigif.textoOscuro,
+                        ),
+                      ),
+                      if (subtitulo != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitulo!,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: ColoresSigif.textoMitigado,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                ...acciones,
+              ],
             ),
-            ...acciones,
+            const SizedBox(height: 20),
           ],
-        ),
-        const SizedBox(height: 20),
-      ],
+        );
+      },
     );
   }
 }
@@ -201,25 +250,28 @@ class EstadoVacio extends StatelessWidget {
   final IconData icono;
   final String titulo;
   final String mensaje;
+  final Widget? accion;
 
   const EstadoVacio({
     super.key,
     required this.icono,
     required this.titulo,
     required this.mensaje,
+    this.accion,
   });
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icono, size: 56, color: ColoresSigif.textoMitigado),
+            Icon(icono, size: 52, color: ColoresSigif.textoMitigado),
             const SizedBox(height: 12),
             Text(titulo,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
@@ -228,6 +280,10 @@ class EstadoVacio extends StatelessWidget {
             Text(mensaje,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: ColoresSigif.textoMitigado)),
+            if (accion != null) ...[
+              const SizedBox(height: 16),
+              accion!,
+            ],
           ],
         ),
       ),
@@ -285,7 +341,12 @@ class FichaUsuario extends StatelessWidget {
   final String rol;
   final String? correo;
 
-  const FichaUsuario({super.key, required this.nombre, required this.rol, this.correo});
+  const FichaUsuario({
+    super.key,
+    required this.nombre,
+    required this.rol,
+    this.correo,
+  });
 
   @override
   Widget build(BuildContext context) {
