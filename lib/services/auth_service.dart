@@ -79,33 +79,60 @@ class AuthService {
     }
 
     try {
-      final uri = ApiConfig.uri(ApiConfig.loginEndpoint, useWebProxy: true);
-      final response = await http
-          .post(
-            uri,
-            headers: const {
-              'Content-Type': 'application/json; charset=utf-8',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode({
-              'email': emailLimpio,
-              'password': password,
-            }),
-          )
-          .timeout(const Duration(seconds: 20));
+      final client = http.Client();
+      try {
+        final rootUri = Uri.parse('https://sigif-final.vercel.app/');
+        final loginPage = await client
+            .get(rootUri)
+            .timeout(const Duration(seconds: 20));
+        final csrfMatch = RegExp(
+          r'name="csrfmiddlewaretoken"[^>]*value="([^"]+)"',
+        ).firstMatch(utf8.decode(loginPage.bodyBytes));
+        final csrfToken = csrfMatch?.group(1);
+        final cookie = loginPage.headers['set-cookie']
+            ?.split(';')
+            .first;
 
-      final bodyText = utf8.decode(response.bodyBytes);
-      final Map<String, dynamic> data = bodyText.isNotEmpty
-          ? Map<String, dynamic>.from(jsonDecode(bodyText) as Map)
-          : <String, dynamic>{};
+        if (loginPage.statusCode != 200 ||
+            csrfToken == null ||
+            cookie == null) {
+          return const ResultadoLogin.error(
+            'El servidor no entregó los datos de autenticación.',
+          );
+        }
 
-      if (response.statusCode == 200 && data['usuario'] is Map) {
-        final token = data['token']?.toString() ?? ApiConfig.defaultApiToken;
-        await ApiConfig.guardarToken(token);
+        final request = http.Request('POST', rootUri)
+          ..followRedirects = false
+          ..headers.addAll({
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'text/html',
+            'Cookie': cookie,
+            'Referer': rootUri.toString(),
+          })
+          ..bodyFields = {
+            'csrfmiddlewaretoken': csrfToken,
+            'correo': emailLimpio,
+            'clave': password,
+          };
+        final response = await client
+            .send(request)
+            .timeout(const Duration(seconds: 20));
 
-        final user = Usuario.fromJson(
-          Map<String, dynamic>.from(data['usuario'] as Map),
-        );
+        if (response.statusCode != 302 && response.statusCode != 303) {
+          return const ResultadoLogin.error('Credenciales inválidas');
+        }
+
+        final usuarios = await UsuariosApiService.instance.listar();
+        final user = usuarios.where((u) {
+          return u.correo.trim().toLowerCase() == emailLimpio && u.activo;
+        }).firstOrNull;
+        if (user == null) {
+          return const ResultadoLogin.error(
+            'El usuario autenticado no existe o está inactivo.',
+          );
+        }
+
+        await ApiConfig.guardarToken(ApiConfig.defaultApiToken);
 
         _usuario = user;
         sessionUsuario = user;
@@ -117,17 +144,13 @@ class AuthService {
         }
 
         await _auditarLogin(user.nombre, 'INICIÓ SESIÓN');
-        return ResultadoLogin.success(user, token: token);
+        return ResultadoLogin.success(
+          user,
+          token: ApiConfig.defaultApiToken,
+        );
+      } finally {
+        client.close();
       }
-
-      if (response.statusCode == 403) {
-        final detalle = data['detail']?.toString() ??
-            'Tu usuario está inactivo. Comunícate con un administrador.';
-        return ResultadoLogin.error(detalle);
-      }
-
-      final mensajeError = data['detail']?.toString() ?? 'Credenciales inválidas';
-      return ResultadoLogin.error(mensajeError);
     } catch (e) {
       return const ResultadoLogin.error(
         'No se pudo conectar con el servidor de autenticación. Verifica tu conexión.',

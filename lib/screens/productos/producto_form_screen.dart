@@ -24,7 +24,6 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
   late final TextEditingController _nombre;
   late final TextEditingController _descripcion;
   late final TextEditingController _precio;
-  late final TextEditingController _stock;
   late String _categoria;
   late bool _activo;
   bool _guardando = false;
@@ -38,7 +37,6 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     _nombre = TextEditingController(text: p?.nombre ?? '');
     _descripcion = TextEditingController(text: p?.descripcion ?? '');
     _precio = TextEditingController(text: p != null ? '${p.precio}' : '');
-    _stock = TextEditingController(text: p != null ? '${p.stock}' : '0');
     final catInicial = p?.categoria;
     _categoria = (catInicial != null &&
             Constantes.categoriasProducto.contains(catInicial))
@@ -52,7 +50,6 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     _nombre.dispose();
     _descripcion.dispose();
     _precio.dispose();
-    _stock.dispose();
     super.dispose();
   }
 
@@ -64,7 +61,7 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
     final nombre = Sanitizacion.limpiarNonNull(_nombre.text.trim());
     final descripcion = Sanitizacion.limpiar(_descripcion.text.trim());
     final precio = int.parse(_precio.text.trim());
-    final stock = int.tryParse(_stock.text.trim()) ?? 0;
+    final stock = widget.producto?.stock ?? 0;
 
     try {
       if (_esNuevo) {
@@ -193,14 +190,13 @@ class _ProductoFormScreenState extends State<ProductoFormScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            TextFormField(
-              controller: _stock,
-              keyboardType: TextInputType.number,
-              validator: (v) =>
-                  _validarEntero(v, 'El stock', permitirCero: true),
-              decoration: const InputDecoration(
-                labelText: 'Stock disponible (unidades) *',
+            const InputDecorator(
+              decoration: InputDecoration(
+                labelText: 'Inventario',
                 prefixIcon: Icon(Icons.inventory_2_outlined),
+              ),
+              child: Text(
+                'Las existencias se ingresan desde el módulo Inventario.',
               ),
             ),
             const SizedBox(height: 14),
