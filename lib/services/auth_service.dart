@@ -7,6 +7,7 @@ import '../db/repos/auditoria_repository.dart';
 import '../db/repos/usuarios_repository.dart';
 import '../models/usuario.dart';
 import 'api_config.dart';
+import 'api_client.dart';
 import 'usuarios_api_service.dart';
 
 /// Resultado del inicio de sesión contra el backend.
@@ -17,13 +18,13 @@ class ResultadoLogin {
   final Usuario? usuario;
 
   const ResultadoLogin.success(this.usuario, {this.token})
-      : success = true,
-        message = '';
+    : success = true,
+      message = '';
 
   const ResultadoLogin.error(this.message)
-      : success = false,
-        token = null,
-        usuario = null;
+    : success = false,
+      token = null,
+      usuario = null;
 }
 
 /// Servicio de Autenticación (`AuthService` / `SessionService`) que consume el
@@ -31,6 +32,7 @@ class ResultadoLogin {
 class AuthService {
   static const String _claveSesion = 'sigif_sesion_id';
   static const String _claveRecordar = 'sigif_recordar_sesion';
+  static const String _claveCookieSesion = 'sigif_cookie_sesion';
 
   Usuario? _usuario;
   bool recordarSesion = true;
@@ -46,6 +48,9 @@ class AuthService {
   /// Carga la sesión persistida al arrancar la aplicación.
   Future<void> cargarSesion() async {
     final prefs = await SharedPreferences.getInstance();
+    ApiClient.instance.establecerCookieSesion(
+      prefs.getString(_claveCookieSesion),
+    );
     recordarSesion = prefs.getBool(_claveRecordar) ?? true;
     final id = prefs.getInt(_claveSesion);
     if (id == null) {
@@ -57,7 +62,8 @@ class AuthService {
       await UsuariosApiService.instance.listar();
     } catch (_) {}
 
-    final u = await UsuariosApiService.instance.obtenerPorId(id) ??
+    final u =
+        await UsuariosApiService.instance.obtenerPorId(id) ??
         await (await UsuariosRepository.abrir()).obtenerPorId(id);
     if (u != null && u.activo) {
       _usuario = u;
@@ -89,9 +95,9 @@ class AuthService {
           r'name="csrfmiddlewaretoken"[^>]*value="([^"]+)"',
         ).firstMatch(utf8.decode(loginPage.bodyBytes));
         final csrfToken = csrfMatch?.group(1);
-        final cookie = loginPage.headers['set-cookie']
-            ?.split(';')
-            .first;
+        final cookie = ApiClient.cookiesDesdeSetCookie(
+          loginPage.headers['set-cookie'],
+        );
 
         if (loginPage.statusCode != 200 ||
             csrfToken == null ||
@@ -122,6 +128,16 @@ class AuthService {
           return const ResultadoLogin.error('Credenciales inválidas');
         }
 
+        final cookieSesion = ApiClient.combinarCookies(
+          cookie,
+          ApiClient.cookiesDesdeSetCookie(response.headers['set-cookie']),
+        );
+        if (cookieSesion == null) {
+          return const ResultadoLogin.error(
+            'El servidor no entregó la sesión de autenticación.',
+          );
+        }
+        ApiClient.instance.establecerCookieSesion(cookieSesion);
         final usuarios = await UsuariosApiService.instance.listar();
         final user = usuarios.where((u) {
           return u.correo.trim().toLowerCase() == emailLimpio && u.activo;
@@ -141,13 +157,14 @@ class AuthService {
         await prefs.setBool(_claveRecordar, recordarSesion);
         if (recordarSesion && user.id != null) {
           await prefs.setInt(_claveSesion, user.id!);
+          await prefs.setString(_claveCookieSesion, cookieSesion);
+        } else {
+          await prefs.remove(_claveSesion);
+          await prefs.remove(_claveCookieSesion);
         }
 
         await _auditarLogin(user.nombre, 'INICIÓ SESIÓN');
-        return ResultadoLogin.success(
-          user,
-          token: ApiConfig.defaultApiToken,
-        );
+        return ResultadoLogin.success(user, token: ApiConfig.defaultApiToken);
       } finally {
         client.close();
       }
@@ -167,6 +184,8 @@ class AuthService {
     final nombre = _usuario?.nombre ?? '';
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_claveSesion);
+    await prefs.remove(_claveCookieSesion);
+    ApiClient.instance.limpiarCookieSesion();
     _usuario = null;
     sessionUsuario = null;
     await _auditarLogin(nombre, 'CERRO SESION');

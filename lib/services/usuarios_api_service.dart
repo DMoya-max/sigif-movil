@@ -67,14 +67,13 @@ class UsuariosApiService {
   }
 
   /// POST: Crea un nuevo usuario mediante `POST /api/usuarios/`.
-  Future<Usuario> crear(
-    Usuario usuario, {
-    required String clavePlana,
-  }) async {
+  Future<Usuario> crear(Usuario usuario, {required String clavePlana}) async {
     try {
       final payload = usuario.toJson(clavePlana: clavePlana);
-      final creadoJson =
-          await _api.postMap(ApiConfig.usuariosEndpoint, payload);
+      final creadoJson = await _api.postMap(
+        ApiConfig.usuariosEndpoint,
+        payload,
+      );
       final creado = Usuario.fromJson(creadoJson);
       try {
         final db = await AppDatabase.instance.db;
@@ -87,10 +86,7 @@ class UsuariosApiService {
   }
 
   /// PUT / PATCH: Actualiza un usuario existente mediante `/api/usuarios/{id}/`.
-  Future<Usuario> actualizar(
-    Usuario usuario, {
-    String? nuevaClavePlana,
-  }) async {
+  Future<Usuario> actualizar(Usuario usuario, {String? nuevaClavePlana}) async {
     final id = usuario.id;
     if (id == null) {
       throw const ApiException('El usuario a editar no tiene un ID válido.');
@@ -114,7 +110,11 @@ class UsuariosApiService {
       final actualizado = Usuario.fromJson(actualizadoJson);
       try {
         final db = await AppDatabase.instance.db;
-        await _guardarEnCacheLocal(db, actualizado, clavePlana: nuevaClavePlana);
+        await _guardarEnCacheLocal(
+          db,
+          actualizado,
+          clavePlana: nuevaClavePlana,
+        );
       } catch (_) {}
       return actualizado;
     } catch (e) {
@@ -124,7 +124,18 @@ class UsuariosApiService {
 
   /// Activa o desactiva un usuario en la API.
   Future<Usuario> cambiarEstado(Usuario usuario, bool activo) async {
-    return actualizar(usuario.copyWith(activo: activo));
+    if (usuario.id == null) {
+      throw const ApiException('El usuario a editar no tiene un ID válido.');
+    }
+
+    await _api.postSesionWeb('cambiar_estado_usuario/${usuario.id}/');
+    final actualizado = await obtenerPorId(usuario.id!);
+    if (actualizado == null || actualizado.activo != activo) {
+      throw const ApiException(
+        'El servidor no confirmó el cambio de estado del usuario.',
+      );
+    }
+    return actualizado;
   }
 
   /// DELETE: Elimina un usuario mediante `DELETE /api/usuarios/{id}/`.

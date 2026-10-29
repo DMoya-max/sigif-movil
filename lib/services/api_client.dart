@@ -25,16 +25,106 @@ class ApiClient {
 
   final http.Client _http = http.Client();
   static const Duration _timeout = Duration(seconds: 20);
+  String? _sessionCookie;
+  String? _csrfToken;
+
+  /// Asigna la cookie de sesión web usada por el backend para resolver el
+  /// usuario SIGIF real y sus permisos de escritura.
+  void establecerCookieSesion(String? cookie) {
+    final valor = cookie?.trim();
+    _sessionCookie = valor == null || valor.isEmpty ? null : valor;
+    _csrfToken = _valorCookie('csrftoken');
+  }
+
+  /// Convierte una o varias cabeceras `Set-Cookie` en una cabecera `Cookie`.
+  static String? cookiesDesdeSetCookie(String? setCookie) {
+    if (setCookie == null || setCookie.trim().isEmpty) return null;
+
+    final cookies = <String, String>{};
+    final expresion = RegExp(r'(?:^|,\s*)([A-Za-z0-9_-]+)=([^;,\s]+)');
+    for (final coincidencia in expresion.allMatches(setCookie)) {
+      cookies[coincidencia.group(1)!] = coincidencia.group(2)!;
+    }
+    if (cookies.isEmpty) return null;
+    return cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+  }
+
+  static String? combinarCookies(String? anteriores, String? nuevas) {
+    final cookies = <String, String>{};
+    final expresion = RegExp(r'(?:^|;\s*)([A-Za-z0-9_-]+)=([^;,\s]+)');
+    for (final fuente in [anteriores, nuevas]) {
+      if (fuente == null) continue;
+      for (final coincidencia in expresion.allMatches(fuente)) {
+        cookies[coincidencia.group(1)!] = coincidencia.group(2)!;
+      }
+    }
+    if (cookies.isEmpty) return null;
+    return cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+  }
+
+  void limpiarCookieSesion() {
+    _sessionCookie = null;
+    _csrfToken = null;
+  }
+
+  Future<void> postSesionWeb(
+    String endpoint, {
+    Map<String, String> body = const {},
+  }) async {
+    if (_sessionCookie == null || _csrfToken == null) {
+      throw const ApiException('La sesión web no está autenticada.');
+    }
+
+    final request =
+        http.Request(
+            'POST',
+            Uri.parse('https://sigif-final.vercel.app/$endpoint'),
+          )
+          ..followRedirects = false
+          ..headers.addAll({
+            'Accept': 'text/html',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Cookie': _sessionCookie!,
+            'Referer': 'https://sigif-final.vercel.app/',
+            'X-CSRFToken': _csrfToken!,
+          })
+          ..bodyFields = {'csrfmiddlewaretoken': _csrfToken!, ...body};
+
+    final response = await _http.send(request).timeout(_timeout);
+    if (response.statusCode < 200 || response.statusCode >= 400) {
+      throw ApiException(
+        'El servidor no pudo actualizar el estado (HTTP ${response.statusCode}).',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  String? _valorCookie(String nombre) {
+    final cookie = _sessionCookie;
+    if (cookie == null) return null;
+    for (final parte in cookie.split(';')) {
+      final separador = parte.indexOf('=');
+      if (separador <= 0) continue;
+      if (parte.substring(0, separador).trim() == nombre) {
+        return parte.substring(separador + 1).trim();
+      }
+    }
+    return null;
+  }
 
   Map<String, String> _headers({bool jsonBody = false, bool useAuth = true}) {
-    final headers = <String, String>{
-      'Accept': 'application/json',
-    };
+    final headers = <String, String>{'Accept': 'application/json'};
     if (jsonBody) {
       headers['Content-Type'] = 'application/json; charset=utf-8';
     }
     if (useAuth && ApiConfig.token.isNotEmpty) {
       headers['Authorization'] = 'Token ${ApiConfig.token}';
+    }
+    if (_sessionCookie != null) {
+      headers['Cookie'] = _sessionCookie!;
+    }
+    if (_csrfToken != null) {
+      headers['X-CSRFToken'] = _csrfToken!;
     }
     return headers;
   }
@@ -90,7 +180,8 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException(
-          'Tiempo de espera agotado al conectar con el servidor.');
+        'Tiempo de espera agotado al conectar con el servidor.',
+      );
     } catch (e) {
       throw ApiException('Error de conexión con la API: $e');
     }
@@ -116,7 +207,8 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException(
-          'Tiempo de espera agotado al conectar con el servidor.');
+        'Tiempo de espera agotado al conectar con el servidor.',
+      );
     } catch (e) {
       throw ApiException('Error de conexión con la API: $e');
     }
@@ -148,7 +240,8 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException(
-          'Tiempo de espera agotado al conectar con el servidor.');
+        'Tiempo de espera agotado al conectar con el servidor.',
+      );
     } catch (e) {
       throw ApiException('Error de conexión con la API: $e');
     }
@@ -180,7 +273,8 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException(
-          'Tiempo de espera agotado al conectar con el servidor.');
+        'Tiempo de espera agotado al conectar con el servidor.',
+      );
     } catch (e) {
       throw ApiException('Error de conexión con la API: $e');
     }
@@ -212,17 +306,15 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException(
-          'Tiempo de espera agotado al conectar con el servidor.');
+        'Tiempo de espera agotado al conectar con el servidor.',
+      );
     } catch (e) {
       throw ApiException('Error de conexión con la API: $e');
     }
   }
 
   /// DELETE para eliminar un recurso por su endpoint (`usuarios/1/`, `productos/1/`).
-  Future<void> delete(
-    String endpoint, {
-    bool useAuth = true,
-  }) async {
+  Future<void> delete(String endpoint, {bool useAuth = true}) async {
     try {
       final response = await _ejecutarConFallback(
         (uri) => _http.delete(uri, headers: _headers(useAuth: useAuth)),
@@ -233,7 +325,8 @@ class ApiClient {
       rethrow;
     } on TimeoutException {
       throw const ApiException(
-          'Tiempo de espera agotado al conectar con el servidor.');
+        'Tiempo de espera agotado al conectar con el servidor.',
+      );
     } catch (e) {
       throw ApiException('Error de conexión con la API: $e');
     }
